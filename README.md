@@ -1,4 +1,4 @@
-🚀 MyLink Project: 아이디어를 현실로 (바이브 코딩)
+# 🚀 MyLink Project: 아이디어를 현실로 (바이브 코딩)
 MyLink는 인스타그램 등 SNS 프로필에서 흔히 사용되는 "멀티 링크 페이지"를 나만의 스타일로 구현한 프로젝트입니다. 이 프로젝트는 구글 Antigravity IDE와 Gemini CLI를 활용한 '바이브 코딩' 방법론을 통해 개발되었습니다.
 
 🛠 Tech Stack
