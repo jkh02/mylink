@@ -3,57 +3,80 @@ import { Card } from "@/components/ui/card";
 
 export default function Page() {
   return (
-    <div className="flex min-h-svh flex-col items-center py-16 px-4 bg-zinc-50 dark:bg-zinc-950">
-      <div className="flex w-full max-w-md flex-col items-center gap-8">
+    <div className="relative flex min-h-svh flex-col items-center py-16 px-4 selection:bg-indigo-300 selection:text-white overflow-hidden">
+      
+      {/* Dynamic Backgrounds (Glow Orbs) */}
+      <div className="fixed inset-0 -z-10 bg-[#fafafa] dark:bg-zinc-950 transition-colors duration-500">
+        <div className="absolute top-[-15%] left-[-10%] h-[600px] w-[600px] rounded-full bg-gradient-to-tr from-indigo-300/30 to-purple-400/30 blur-[100px] dark:from-indigo-600/20 dark:to-purple-800/20 animate-pulse" />
+        <div className="absolute bottom-[-15%] right-[-10%] h-[600px] w-[600px] rounded-full bg-gradient-to-bl from-cyan-300/30 to-emerald-300/30 blur-[120px] dark:from-cyan-800/10 dark:to-emerald-900/10" />
+      </div>
+
+      <div className="flex w-full max-w-md flex-col items-center gap-10 relative z-10">
         
-        {/* Profile Placeholder */}
-        <div className="flex flex-col items-center gap-4 mb-2">
-          <div className="h-24 w-24 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800 ring-4 ring-white dark:ring-zinc-900 shadow-lg" />
-          <div className="flex flex-col items-center gap-1">
-            <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">@mylink_user</h1>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
-              하나의 링크로 내 모든 채널을 연결하세요
+        {/* Profile Section */}
+        <div className="flex flex-col items-center gap-5 mb-2">
+          {/* Avatar with Glow Ring */}
+          <div className="relative group cursor-pointer">
+            <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-pink-500 via-purple-500 to-indigo-500 opacity-60 blur-md transition-opacity duration-500 group-hover:opacity-100 dark:opacity-40 dark:group-hover:opacity-80" />
+            <div className="relative h-28 w-28 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800 ring-[3px] ring-white dark:ring-zinc-900 shadow-2xl">
+              <img 
+                src="https://api.dicebear.com/7.x/notionists/svg?seed=mylink"
+                alt="Profile avatar"
+                className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110"
+              />
+            </div>
+          </div>
+          
+          <div className="flex flex-col items-center gap-2 text-center mt-1">
+            <h1 className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-900 dark:from-white dark:via-zinc-300 dark:to-white">
+              @mylink_user
+            </h1>
+            <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 max-w-[280px] leading-relaxed">
+              나만의 특별한 링크 페이지를 만들고, 모든 채널을 한곳에서 연결하세요 ✨
             </p>
           </div>
         </div>
 
         {/* Links List */}
-        <div className="flex flex-col gap-4 w-full">
+        <div className="flex flex-col gap-5 w-full">
           {dummyLinks.map((link) => (
             <a
               key={link.id}
               href={link.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="w-full transition-transform hover:scale-[1.02] active:scale-[0.98]"
+              className="group w-full block outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-2xl"
             >
-              <Card className="group relative flex items-center p-4 shadow-sm hover:shadow-md transition-shadow transition-colors border-zinc-200/80 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white/70 dark:bg-zinc-900/70 backdrop-blur-sm cursor-pointer overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-zinc-100/50 to-transparent dark:via-zinc-800/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none" />
+              <Card className="relative flex items-center p-4 h-16 overflow-hidden border border-white/40 dark:border-white/10 bg-white/50 dark:bg-zinc-900/40 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgb(0,0,0,0.08)] dark:hover:shadow-[0_20px_40px_rgb(0,0,0,0.3)] hover:border-white/80 dark:hover:border-white/20 rounded-xl">
                 
-                {/* Icon Wrapper */}
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-zinc-100 dark:bg-zinc-800 shadow-sm border border-zinc-200/50 dark:border-zinc-700/50">
+                {/* Shine Animation Effect on Hover */}
+                <div className="absolute inset-0 -translate-x-[150%] bg-gradient-to-r from-transparent via-white/50 dark:via-white/5 to-transparent skew-x-[-20deg] transition-transform duration-700 ease-out group-hover:translate-x-[150%]" />
+                
+                {/* Icon Wrapper (Perfectly Absolute Centered) */}
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-zinc-100/90 dark:bg-zinc-800/90 shadow-sm border border-zinc-200/50 dark:border-zinc-700/50 transition-transform duration-300 group-hover:scale-110">
                   {link.faviconUrl ? (
                     <img 
                       src={link.faviconUrl} 
                       alt={`${link.title} icon`} 
-                      className="h-6 w-6 rounded-sm object-contain" 
+                      className="h-6 w-6 rounded-full object-contain" 
                     />
                   ) : (
-                    <div className="h-6 w-6 bg-zinc-300 dark:bg-zinc-600 rounded-sm" />
+                    <div className="h-6 w-6 bg-zinc-200 dark:bg-zinc-700 rounded-full" />
                   )}
                 </div>
                 
-                {/* Link Title */}
-                <div className="flex-1 text-center font-medium pr-12 text-zinc-800 dark:text-zinc-200">
+                {/* Link Title (Perfectly Centered + Optically adjusted) */}
+                <div className="w-full text-center font-mono font-semibold tracking-wide mt-[2px] text-zinc-800 dark:text-zinc-200 transition-colors duration-300 group-hover:text-zinc-950 dark:group-hover:text-white">
                   {link.title}
                 </div>
+                
               </Card>
             </a>
           ))}
         </div>
 
-        {/* Footer Placeholder */}
-        <p className="mt-8 text-xs font-medium text-zinc-400 dark:text-zinc-600">
+        {/* Footer */}
+        <p className="mt-12 text-xs font-semibold tracking-widest uppercase text-zinc-400 dark:text-zinc-600">
           Powered by MyLink
         </p>
       </div>
