@@ -1,7 +1,86 @@
-import { dummyLinks } from "@/data/links";
+"use client";
+
+import { useState } from "react";
+import { dummyLinks, LinkItem } from "@/data/links";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+
+const urlSchema = z.string().min(1, { message: "연결할 URL 주소를 입력해주세요." }).refine((val) => {
+  try {
+    const finalUrl = val.trim().startsWith("http") ? val.trim() : `https://${val.trim()}`;
+    const urlObj = new URL(finalUrl);
+    return urlObj.hostname.includes(".");
+  } catch {
+    return false;
+  }
+}, {
+  message: "올바른 형태의 URL 주소를 입력해주세요 (예: instagram.com/my_id)."
+});
+
+const formSchema = z.object({
+  title: z.string().min(1, { message: "링크 제목을 입력해주세요." }),
+  url: urlSchema,
+});
 
 export default function Page() {
+  const [links, setLinks] = useState<LinkItem[]>(dummyLinks);
+  const [isOpen, setIsOpen] = useState(false);
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      title: "",
+      url: "",
+    },
+  });
+
+  const onSubmit = (values: z.infer<typeof formSchema>) => {
+    let parsedDomain = "";
+    let finalUrl = "";
+    try {
+      finalUrl = values.url.trim().startsWith("http") ? values.url.trim() : `https://${values.url.trim()}`;
+      const urlObj = new URL(finalUrl);
+      parsedDomain = urlObj.hostname;
+    } catch (err) {}
+
+    const faviconUrl = parsedDomain 
+      ? `https://s2.googleusercontent.com/s2/favicons?domain=${parsedDomain}`
+      : undefined;
+
+    const newLink: LinkItem = {
+      id: `local-link-${Date.now()}`,
+      title: values.title,
+      url: finalUrl,
+      faviconUrl,
+      createdAt: new Date().toISOString(),
+    };
+
+    setLinks([newLink, ...links]);
+    form.reset();
+    setIsOpen(false);
+  };
+
   return (
     <div className="relative flex min-h-svh flex-col items-center py-16 px-4 selection:bg-indigo-300 selection:text-white overflow-hidden">
       
@@ -39,7 +118,59 @@ export default function Page() {
 
         {/* Links List */}
         <div className="flex flex-col gap-5 w-full">
-          {dummyLinks.map((link) => (
+          
+          {/* Add Link Dialog */}
+          <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if(!open) form.reset(); }}>
+            <DialogTrigger render={<Button variant="outline" className="w-full rounded-2xl h-14 border-dashed border-2 bg-white/50 dark:bg-zinc-900/40 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 backdrop-blur-xl dark:text-zinc-200" />}>
+              + 새 링크 추가하기
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-md">
+              <DialogHeader>
+                <DialogTitle>새 링크 추가</DialogTitle>
+                <DialogDescription>
+                  추가할 링크의 제목과 목적지 주소(URL)를 입력하세요. 구글 API를 통해 아이콘이 자동 결합됩니다.
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 py-4">
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>링크 제목</FormLabel>
+                        <FormControl>
+                          <Input placeholder="예: 내 인스타그램" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="url"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>URL 주소</FormLabel>
+                        <FormControl>
+                          <Input placeholder="https://instagram.com/..." type="text" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <DialogFooter className="mt-4">
+                    <Button type="button" variant="ghost" onClick={() => { setIsOpen(false); form.reset(); }}>
+                      취소
+                    </Button>
+                    <Button type="submit">추가하기</Button>
+                  </DialogFooter>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+
+          {links.map((link) => (
             <a
               key={link.id}
               href={link.url}
