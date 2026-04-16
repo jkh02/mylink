@@ -1,13 +1,17 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
-import { useState } from "react";
-import { dummyLinks, LinkItem } from "@/data/links";
+import { useState, useEffect } from "react";
+import { LinkItem } from "@/data/links";
+import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
+import { IconLoader2 } from "@tabler/icons-react";
 import {
   Form,
   FormControl,
@@ -44,8 +48,26 @@ const formSchema = z.object({
 });
 
 export default function Page() {
-  const [links, setLinks] = useState<LinkItem[]>(dummyLinks);
+  const [links, setLinks] = useState<LinkItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    const q = query(collection(db, "users/anonymous/links"), orderBy("createdAt", "desc"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const fetchLinks: LinkItem[] = snapshot.docs.map(doc => ({
+        id: doc.id,
+        title: doc.data().title,
+        url: doc.data().url,
+        faviconUrl: doc.data().faviconUrl,
+        createdAt: doc.data().createdAt?.toDate?.().toISOString() || new Date().toISOString(),
+      }));
+      setLinks(fetchLinks);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -55,7 +77,8 @@ export default function Page() {
     },
   });
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setIsSubmitting(true);
     let parsedDomain = "";
     let finalUrl = "";
     try {
@@ -68,17 +91,20 @@ export default function Page() {
       ? `https://s2.googleusercontent.com/s2/favicons?domain=${parsedDomain}`
       : undefined;
 
-    const newLink: LinkItem = {
-      id: `local-link-${Date.now()}`,
-      title: values.title,
-      url: finalUrl,
-      faviconUrl,
-      createdAt: new Date().toISOString(),
-    };
-
-    setLinks([newLink, ...links]);
-    form.reset();
-    setIsOpen(false);
+    try {
+      await addDoc(collection(db, "users/anonymous/links"), {
+        title: values.title,
+        url: finalUrl,
+        faviconUrl: faviconUrl || null,
+        createdAt: serverTimestamp(),
+      });
+      form.reset();
+      setIsOpen(false);
+    } catch (error) {
+      console.error("링크 추가 중 오류 발생:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -120,10 +146,15 @@ export default function Page() {
         <div className="flex flex-col gap-5 w-full">
           
           {/* Add Link Dialog */}
+          <Button 
+            variant="outline" 
+            className="w-full rounded-2xl h-14 border-dashed border-2 bg-white/50 dark:bg-zinc-900/40 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 backdrop-blur-xl dark:text-zinc-200"
+            onClick={() => setIsOpen(true)}
+          >
+            + 새 링크 추가하기
+          </Button>
+
           <Dialog open={isOpen} onOpenChange={(open) => { setIsOpen(open); if(!open) form.reset(); }}>
-            <DialogTrigger render={<Button variant="outline" className="w-full rounded-2xl h-14 border-dashed border-2 bg-white/50 dark:bg-zinc-900/40 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50 backdrop-blur-xl dark:text-zinc-200" />}>
-              + 새 링크 추가하기
-            </DialogTrigger>
             <DialogContent className="sm:max-w-md">
               <DialogHeader>
                 <DialogTitle>새 링크 추가</DialogTitle>
@@ -160,19 +191,35 @@ export default function Page() {
                     )}
                   />
                   <DialogFooter className="mt-4">
-                    <Button type="button" variant="ghost" onClick={() => { setIsOpen(false); form.reset(); }}>
+                    <Button type="button" variant="ghost" onClick={() => { setIsOpen(false); form.reset(); }} disabled={isSubmitting}>
                       취소
                     </Button>
-                    <Button type="submit">추가하기</Button>
+                    <Button type="submit" disabled={isSubmitting}>
+                      {isSubmitting ? (
+                        <>
+                          <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
+                          추가 중...
+                        </>
+                      ) : (
+                        "추가하기"
+                      )}
+                    </Button>
                   </DialogFooter>
                 </form>
               </Form>
             </DialogContent>
           </Dialog>
 
-          {links.map((link) => (
-            <a
-              key={link.id}
+          {isLoading ? (
+            <div className="flex flex-col gap-5 w-full">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="h-16 rounded-xl bg-zinc-200/50 dark:bg-zinc-800/50 animate-pulse border border-zinc-200/50 dark:border-zinc-700/50" />
+              ))}
+            </div>
+          ) : (
+            links.map((link) => (
+              <a
+                key={link.id}
               href={link.url}
               target="_blank"
               rel="noopener noreferrer"
@@ -203,7 +250,8 @@ export default function Page() {
                 
               </Card>
             </a>
-          ))}
+          ))
+          )}
         </div>
 
         {/* Footer */}
