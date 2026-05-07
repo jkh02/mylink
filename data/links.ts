@@ -4,6 +4,7 @@ export interface LinkItem {
   url: string;
   faviconUrl?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export const dummyLinks: LinkItem[] = [
@@ -13,6 +14,7 @@ export const dummyLinks: LinkItem[] = [
     url: "https://instagram.com/your_username",
     faviconUrl: "https://s2.googleusercontent.com/s2/favicons?domain=instagram.com",
     createdAt: "2026-03-25T16:00:00Z",
+    updatedAt: "2026-03-25T16:00:00Z",
   },
   {
     id: "link-2",
@@ -20,6 +22,7 @@ export const dummyLinks: LinkItem[] = [
     url: "https://youtube.com/@your_channel",
     faviconUrl: "https://s2.googleusercontent.com/s2/favicons?domain=youtube.com",
     createdAt: "2026-03-25T16:01:00Z",
+    updatedAt: "2026-03-25T16:01:00Z",
   },
   {
     id: "link-3",
@@ -27,6 +30,7 @@ export const dummyLinks: LinkItem[] = [
     url: "https://blog.naver.com/your_blog",
     faviconUrl: "https://s2.googleusercontent.com/s2/favicons?domain=naver.com",
     createdAt: "2026-03-25T16:02:00Z",
+    updatedAt: "2026-03-25T16:02:00Z",
   },
   {
     id: "link-4",
@@ -34,6 +38,7 @@ export const dummyLinks: LinkItem[] = [
     url: "https://github.com/your_username",
     faviconUrl: "https://s2.googleusercontent.com/s2/favicons?domain=github.com",
     createdAt: "2026-03-25T16:03:00Z",
+    updatedAt: "2026-03-25T16:03:00Z",
   },
   {
     id: "link-5",
@@ -41,5 +46,6 @@ export const dummyLinks: LinkItem[] = [
     url: "https://your-portfolio.com",
     faviconUrl: "https://s2.googleusercontent.com/s2/favicons?domain=your-portfolio.com",
     createdAt: "2026-03-25T16:04:00Z",
+    updatedAt: "2026-03-25T16:04:00Z",
   },
 ];
