@@ -3,8 +3,9 @@
 
 import { useState, useEffect } from "react";
 import { LinkItem } from "@/data/links";
-import { collection, addDoc, serverTimestamp, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc, setDoc, getDoc } from "firebase/firestore";
-import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User } from "firebase/auth";
+import { collection, addDoc, serverTimestamp, query, orderBy, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs, where } from "firebase/firestore";
+import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User, updateProfile } from "firebase/auth";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { db, auth } from "@/lib/firebase";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { IconLoader2, IconEdit, IconTrash, IconCheck, IconX } from "@tabler/icons-react";
+import { toast } from "sonner";
 import {
   Form,
   FormControl,
@@ -30,6 +32,15 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { IconCopy, IconEye, IconUserEdit, IconLogout } from "@tabler/icons-react";
 
 const urlSchema = z.string().min(1, { message: "연결할 URL 주소를 입력해주세요." }).refine((val) => {
   try {
@@ -46,6 +57,11 @@ const urlSchema = z.string().min(1, { message: "연결할 URL 주소를 입력�
 const formSchema = z.object({
   title: z.string().min(1, { message: "링크 제목을 입력해주세요." }),
   url: urlSchema,
+});
+
+const profileSchema = z.object({
+  displayName: z.string().min(2, { message: "닉네임은 2자 이상이어야 합니다." }).max(20, { message: "닉네임은 20자 이하여야 합니다." }),
+  bio: z.string().max(100, { message: "소개글은 100자 이하여야 합니다." }).optional(),
 });
 
 function InlineEditForm({ 
@@ -126,17 +142,45 @@ function InlineEditForm({
 }
 
 export default function Page() {
-  const [links, setLinks] = useState<LinkItem[]>([]);
-  const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-
-  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-  const [deletingLink, setDeletingLink] = useState<LinkItem | null>(null);
-  const [isActionLoading, setIsActionLoading] = useState(false);
+  const queryClient = useQueryClient();
 
   const [user, setUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  const { data: profile } = useQuery({
+    queryKey: ['profile', user?.uid],
+    queryFn: async () => {
+      if (!user) return null;
+      const snap = await getDoc(doc(db, "users", user.uid));
+      return snap.exists() ? snap.data() : null;
+    },
+    enabled: !!user,
+  });
+
+  const { data: links = [], isLoading: isLinksLoading } = useQuery({
+    queryKey: ['links', user?.uid],
+    queryFn: async () => {
+      if (!user) return [];
+      const q = query(collection(db, "users", user.uid, "links"), orderBy("createdAt", "desc"));
+      const snap = await getDocs(q);
+      return snap.docs.map(docSnap => ({
+        id: docSnap.id,
+        title: docSnap.data().title,
+        url: docSnap.data().url,
+        faviconUrl: docSnap.data().faviconUrl,
+        createdAt: docSnap.data().createdAt?.toDate?.().toISOString() || new Date().toISOString(),
+        updatedAt: docSnap.data().updatedAt?.toDate?.().toISOString() || undefined,
+      })) as LinkItem[];
+    },
+    enabled: !!user,
+  });
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+  const [deletingLink, setDeletingLink] = useState<LinkItem | null>(null);
+
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isDuplicateChecked, setIsDuplicateChecked] = useState(true);
 
   // Authentication Listener
   useEffect(() => {
@@ -146,6 +190,91 @@ export default function Page() {
     });
     return () => unsubscribe();
   }, []);
+
+  const profileForm = useForm<z.infer<typeof profileSchema>>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      displayName: "",
+      bio: "",
+    },
+  });
+
+  useEffect(() => {
+    if (profile && isProfileOpen) {
+      profileForm.reset({
+        displayName: profile.displayName || "",
+        bio: profile.bio || "",
+      });
+      setIsDuplicateChecked(true); // 기존 본인 닉네임이므로 통과 상태로 시작
+    }
+  }, [profile, isProfileOpen, profileForm]);
+
+  const [isProfileSubmitting, setIsProfileSubmitting] = useState(false);
+
+  const handleDuplicateCheck = async () => {
+    const newName = profileForm.getValues("displayName");
+    if (!newName || newName.length < 2) {
+      toast.error("올바른 닉네임을 입력해주세요 (최소 2자).");
+      return;
+    }
+    if (newName === profile?.displayName) {
+      setIsDuplicateChecked(true);
+      toast.success("현재 사용 중인 닉네임입니다.");
+      return;
+    }
+    
+    setIsProfileSubmitting(true);
+    try {
+      const q = query(collection(db, "users"), where("displayName", "==", newName));
+      const querySnapshot = await getDocs(q);
+      
+      let isDuplicate = false;
+      querySnapshot.forEach((docSnap) => {
+        if (docSnap.id !== user?.uid) isDuplicate = true;
+      });
+      
+      if (isDuplicate) {
+        toast.error("이미 누군가 사용 중인 닉네임입니다.");
+        setIsDuplicateChecked(false);
+      } else {
+        toast.success("사용 가능한 닉네임입니다!");
+        setIsDuplicateChecked(true);
+      }
+    } catch (error) {
+      toast.error("중복 확인 중 오류가 발생했습니다.");
+    } finally {
+      setIsProfileSubmitting(false);
+    }
+  };
+
+  const profileMutation = useMutation({
+    mutationFn: async (values: z.infer<typeof profileSchema>) => {
+      if (!user) throw new Error("No user");
+      await updateDoc(doc(db, "users", user.uid), {
+        displayName: values.displayName,
+        bio: values.bio || "",
+        updatedAt: serverTimestamp()
+      });
+      if (auth.currentUser) {
+        await updateProfile(auth.currentUser, { displayName: values.displayName });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['profile', user?.uid] });
+      setIsProfileOpen(false);
+      toast.success("프로필이 성공적으로 업데이트되었습니다.");
+    },
+    onError: () => toast.error("프로필 업데이트 중 오류가 발생했습니다.")
+  });
+
+  const onProfileSubmit = async (values: z.infer<typeof profileSchema>) => {
+    if (!user) return;
+    if (!isDuplicateChecked) {
+      toast.error("닉네임 중복 확인을 먼저 완료해주세요.");
+      return;
+    }
+    profileMutation.mutate(values);
+  };
 
   const handleLogin = async () => {
     try {
@@ -186,58 +315,41 @@ export default function Page() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deletingLink || !user) return;
-    setIsActionLoading(true);
-    try {
-      await new Promise(resolve => setTimeout(resolve, 600));
-      await deleteDoc(doc(db, "users", user.uid, "links", deletingLink.id));
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (!user) throw new Error("No user");
+      await new Promise(resolve => setTimeout(resolve, 600)); // optimistic delay UX
+      await deleteDoc(doc(db, "users", user.uid, "links", id));
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['links', user?.uid] });
       setDeletingLink(null);
-    } catch (error) {
-      console.error(error);
-    } finally {
-      setIsActionLoading(false);
     }
+  });
+
+  const handleDelete = () => {
+    if (deletingLink) deleteMutation.mutate(deletingLink.id);
   };
 
-  const handleUpdate = async (id: string, title: string, url: string, faviconUrl: string | undefined) => {
-    if (!user) return;
-    try {
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, title, url, faviconUrl }: any) => {
+      if (!user) throw new Error("No user");
       await updateDoc(doc(db, "users", user.uid, "links", id), {
         title, 
         url, 
         faviconUrl,
         updatedAt: serverTimestamp()
       });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['links', user?.uid] });
       setEditingLinkId(null);
-    } catch (e) {
-      console.error(e);
     }
-  };
+  });
 
-  useEffect(() => {
-    if (!user) {
-      setLinks([]);
-      setIsLoading(false);
-      return;
-    }
-    
-    setIsLoading(true);
-    const q = query(collection(db, "users", user.uid, "links"), orderBy("createdAt", "desc"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchLinks: LinkItem[] = snapshot.docs.map(doc => ({
-        id: doc.id,
-        title: doc.data().title,
-        url: doc.data().url,
-        faviconUrl: doc.data().faviconUrl,
-        createdAt: doc.data().createdAt?.toDate?.().toISOString() || new Date().toISOString(),
-        updatedAt: doc.data().updatedAt?.toDate?.().toISOString() || undefined,
-      }));
-      setLinks(fetchLinks);
-      setIsLoading(false);
-    });
-    return () => unsubscribe();
-  }, [user]);
+  const handleUpdate = (id: string, title: string, url: string, faviconUrl: string | undefined) => {
+    updateMutation.mutate({ id, title, url, faviconUrl });
+  };
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -247,22 +359,20 @@ export default function Page() {
     },
   });
 
-  const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    setIsSubmitting(true);
-    let parsedDomain = "";
-    let finalUrl = "";
-    try {
-      finalUrl = values.url.trim().startsWith("http") ? values.url.trim() : `https://${values.url.trim()}`;
-      const urlObj = new URL(finalUrl);
-      parsedDomain = urlObj.hostname;
-    } catch (err) {}
+  const addMutation = useMutation({
+    mutationFn: async (values: z.infer<typeof formSchema>) => {
+      if (!user) throw new Error("No user");
+      let parsedDomain = "";
+      let finalUrl = values.url.trim().startsWith("http") ? values.url.trim() : `https://${values.url.trim()}`;
+      try {
+        const urlObj = new URL(finalUrl);
+        parsedDomain = urlObj.hostname;
+      } catch (err) {}
 
-    const faviconUrl = parsedDomain 
-      ? `https://s2.googleusercontent.com/s2/favicons?domain=${parsedDomain}`
-      : undefined;
+      const faviconUrl = parsedDomain 
+        ? `https://s2.googleusercontent.com/s2/favicons?domain=${parsedDomain}`
+        : undefined;
 
-    if (!user) return;
-    try {
       await addDoc(collection(db, "users", user.uid, "links"), {
         title: values.title,
         url: finalUrl,
@@ -270,13 +380,19 @@ export default function Page() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['links', user?.uid] });
       form.reset();
       setIsOpen(false);
-    } catch (error) {
+    },
+    onError: (error) => {
       console.error("링크 추가 중 오류 발생:", error);
-    } finally {
-      setIsSubmitting(false);
     }
+  });
+
+  const onSubmit = (values: z.infer<typeof formSchema>) => {
+    addMutation.mutate(values);
   };
 
   return (
@@ -289,21 +405,148 @@ export default function Page() {
       </div>
 
       {/* Header Area */}
-      <header className="w-full max-w-md flex items-center justify-end mb-8 relative z-20">
+      <header className={`w-full max-w-md flex items-center mb-8 relative z-20 ${!isAuthLoading && user ? "justify-between" : "justify-end"}`}>
         {!isAuthLoading && (
           user ? (
-            <div className="flex items-center gap-3 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/40 dark:border-white/10 shadow-sm">
-              <div className="flex items-center gap-2">
-                {user.photoURL && (
-                  <img src={user.photoURL} alt="Avatar" className="w-6 h-6 rounded-full" />
-                )}
-                <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{user.displayName}</span>
-              </div>
-              <div className="w-px h-4 bg-zinc-300 dark:bg-zinc-700" />
-              <Button variant="ghost" size="sm" onClick={handleLogout} className="h-7 px-2 text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200">
-                로그아웃
-              </Button>
-            </div>
+            <>
+              <button
+                onClick={() => window.open(`/@${profile?.displayName || user.displayName || user.uid}`, '_blank')}
+                className="flex items-center gap-2 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/40 dark:border-white/10 shadow-sm hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all text-sm font-semibold text-zinc-700 dark:text-zinc-200 cursor-pointer"
+              >
+                <IconEye className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+                <span>내 페이지</span>
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger className="outline-none">
+                <div className="flex items-center gap-2 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/40 dark:border-white/10 shadow-sm hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all cursor-pointer">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="Avatar" className="w-7 h-7 rounded-full border border-zinc-200 dark:border-zinc-700" />
+                  ) : (
+                    <div className="w-7 h-7 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                  )}
+                  <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-200">{profile?.displayName || user.displayName}</span>
+                </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64 rounded-2xl p-2 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-xl">
+                <div className="flex items-center gap-3 p-2 mb-1 px-3">
+                  {user.photoURL ? (
+                    <img src={user.photoURL} alt="Avatar" className="w-10 h-10 rounded-full border border-zinc-200 dark:border-zinc-700" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-zinc-200 dark:bg-zinc-700" />
+                  )}
+                  <div className="flex flex-col">
+                    <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100">{profile?.displayName || user.displayName}</span>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400 font-normal truncate max-w-[150px]">{user.email}</span>
+                  </div>
+                </div>
+                <DropdownMenuSeparator className="bg-zinc-200/50 dark:bg-zinc-800/50" />
+                
+                <DropdownMenuItem 
+                  className="rounded-xl p-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  onClick={() => {
+                    navigator.clipboard.writeText(`https://mylink.com/@${profile?.displayName || user.displayName || user.uid}`);
+                    toast.success("프로필 주소가 복사되었습니다.");
+                  }}
+                >
+                  <IconCopy className="w-4 h-4 mr-3 text-zinc-500 dark:text-zinc-400" />
+                  <span className="font-medium text-sm text-zinc-700 dark:text-zinc-300">내 링크 복사하기</span>
+                </DropdownMenuItem>
+                
+                <DropdownMenuItem 
+                  className="rounded-xl p-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  onClick={() => window.open(`/@${profile?.displayName || user.displayName || user.uid}`, '_blank')}
+                >
+                  <IconEye className="w-4 h-4 mr-3 text-zinc-500 dark:text-zinc-400" />
+                  <span className="font-medium text-sm text-zinc-700 dark:text-zinc-300">내 페이지 미리보기</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem 
+                  className="rounded-xl p-3 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                  onClick={() => setIsProfileOpen(true)}
+                >
+                  <IconUserEdit className="w-4 h-4 mr-3 text-zinc-500 dark:text-zinc-400" />
+                  <span className="font-medium text-sm text-zinc-700 dark:text-zinc-300">프로필 편집</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuSeparator className="bg-zinc-200/50 dark:bg-zinc-800/50" />
+                <DropdownMenuItem 
+                  className="rounded-xl p-3 cursor-pointer hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  onClick={handleLogout}
+                >
+                  <IconLogout className="w-4 h-4 mr-3 text-red-500" />
+                  <span className="font-bold text-sm text-red-500">로그아웃</span>
+                </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <Dialog open={isProfileOpen} onOpenChange={setIsProfileOpen}>
+                <DialogContent className="sm:max-w-md p-0 overflow-hidden border-zinc-200/50 dark:border-zinc-800/50 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-2xl rounded-3xl shadow-2xl">
+                  <DialogHeader className="p-6 pb-0">
+                    <DialogTitle className="text-2xl font-bold">프로필 편집</DialogTitle>
+                    <DialogDescription>
+                      자신만의 닉네임과 짧은 소개를 작성해보세요.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="p-6 pt-4">
+                    <Form {...profileForm}>
+                      <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4">
+                        <FormField
+                          control={profileForm.control}
+                          name="displayName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>닉네임</FormLabel>
+                              <div className="flex gap-2">
+                                <FormControl>
+                                  <Input 
+                                    placeholder="닉네임" 
+                                    className="bg-white/50 dark:bg-zinc-900/50" 
+                                    {...field} 
+                                    onChange={(e) => {
+                                      field.onChange(e);
+                                      setIsDuplicateChecked(false);
+                                    }}
+                                  />
+                                </FormControl>
+                                <Button 
+                                  type="button" 
+                                  variant={isDuplicateChecked ? "outline" : "default"} 
+                                  onClick={handleDuplicateCheck}
+                                  disabled={isProfileSubmitting || !field.value || field.value.length < 2}
+                                >
+                                  중복 확인
+                                </Button>
+                              </div>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={profileForm.control}
+                          name="bio"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>소개글</FormLabel>
+                              <FormControl>
+                                <Input placeholder="나를 표현하는 한 줄 소개" className="bg-white/50 dark:bg-zinc-900/50" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <DialogFooter className="mt-6 gap-2">
+                          <Button type="button" variant="outline" onClick={() => setIsProfileOpen(false)} className="rounded-xl">취소</Button>
+                          <Button type="submit" disabled={isProfileSubmitting || !isDuplicateChecked} className="rounded-xl flex gap-2">
+                            {isProfileSubmitting && <IconLoader2 className="w-4 h-4 animate-spin" />}
+                            저장하기
+                          </Button>
+                        </DialogFooter>
+                      </form>
+                    </Form>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </>
           ) : (
             <Button variant="outline" onClick={handleLogin} className="rounded-full bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md border border-white/40 dark:border-white/10 shadow-sm hover:bg-white dark:hover:bg-zinc-800 transition-all">
               <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
@@ -332,10 +575,20 @@ export default function Page() {
             <h1 className="text-3xl font-extrabold tracking-tight text-zinc-900 dark:text-white mt-8">
               모든 링크를 <br />하나의 페이지에.
             </h1>
-            <p className="text-base text-zinc-600 dark:text-zinc-400 max-w-[280px] leading-relaxed">
-              크리에이터, 인플루언서, 브랜드를 위한 나만의 멀티 링크 페이지를 만들어보세요.
+            <p className="text-base text-zinc-600 dark:text-zinc-400 max-w-[280px] leading-relaxed break-keep">
+              크리에이터, 인플루언서, 브랜드를 위한 <br />나만의 멀티 링크 페이지를 만들어보세요.
             </p>
-            <div className="mt-8 p-6 rounded-3xl bg-white/50 dark:bg-zinc-900/40 border border-white/60 dark:border-white/10 backdrop-blur-xl shadow-xl w-full flex flex-col gap-4">
+            
+            {/* Project Preview Image */}
+            <div className="relative w-full max-w-sm mt-6 mb-2 overflow-hidden rounded-3xl shadow-2xl border border-zinc-200/50 dark:border-zinc-800/50 bg-white">
+              <img 
+                src="/landing-image.png" 
+                alt="MyLink Connection" 
+                className="w-full h-[240px] object-cover hover:scale-105 transition-transform duration-700"
+              />
+            </div>
+
+            <div className="mt-4 p-6 rounded-3xl bg-white/50 dark:bg-zinc-900/40 border border-white/60 dark:border-white/10 backdrop-blur-xl shadow-xl w-full flex flex-col gap-4">
               <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">
                 지금 바로 시작하려면 로그인하세요 👇
               </p>
@@ -362,10 +615,10 @@ export default function Page() {
               
               <div className="flex flex-col items-center gap-2 text-center mt-1">
                 <h1 className="text-2xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-zinc-900 via-zinc-700 to-zinc-900 dark:from-white dark:via-zinc-300 dark:to-white">
-                  {user.displayName || "@mylink_user"}
+                  {profile?.displayName || user.displayName || "@mylink_user"}
                 </h1>
                 <p className="text-sm font-medium text-zinc-600 dark:text-zinc-400 max-w-[280px] leading-relaxed">
-                  나만의 특별한 링크 페이지를 만들고, 모든 채널을 한곳에서 연결하세요 ✨
+                  {profile?.bio || "나를 표현하는 한 줄 소개를 작성해보세요 ✨"}
                 </p>
               </div>
             </div>
@@ -419,11 +672,11 @@ export default function Page() {
                     )}
                   />
                   <DialogFooter className="mt-4">
-                    <Button type="button" variant="ghost" onClick={() => { setIsOpen(false); form.reset(); }} disabled={isSubmitting}>
+                    <Button type="button" variant="ghost" onClick={() => { setIsOpen(false); form.reset(); }} disabled={addMutation.isPending}>
                       취소
                     </Button>
-                    <Button type="submit" disabled={isSubmitting}>
-                      {isSubmitting ? (
+                    <Button type="submit" disabled={addMutation.isPending}>
+                      {addMutation.isPending ? (
                         <>
                           <IconLoader2 className="mr-2 h-4 w-4 animate-spin" />
                           추가 중...
@@ -451,18 +704,18 @@ export default function Page() {
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter className="mt-4">
-                <Button type="button" variant="ghost" onClick={() => setDeletingLink(null)} disabled={isActionLoading}>
+                <Button type="button" variant="ghost" onClick={() => setDeletingLink(null)} disabled={deleteMutation.isPending}>
                   취소
                 </Button>
-                <Button variant="destructive" onClick={handleDelete} disabled={isActionLoading}>
-                  {isActionLoading ? <IconLoader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                <Button variant="destructive" onClick={handleDelete} disabled={deleteMutation.isPending}>
+                  {deleteMutation.isPending ? <IconLoader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   삭제하기
                 </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
 
-          {isLoading ? (
+          {isLinksLoading ? (
             <div className="flex flex-col gap-5 w-full">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="h-16 rounded-xl bg-zinc-200/50 dark:bg-zinc-800/50 animate-pulse border border-zinc-200/50 dark:border-zinc-700/50" />
