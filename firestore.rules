@@ -1,0 +1,56 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // 로그인 여부 확인 함수
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // 본인(Owner) 여부 확인 함수
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // 1. 유저 프로필 문서 (users/{userId})
+    // 💡 참고: 프로필 정보는 별도의 sub-collection이 아닌 users 문서 자체에 저장됩니다.
+    match /users/{userId} {
+      
+      // [읽기 권한] 누구나 허용
+      // (퍼블릭 랜딩 페이지 접속 시 프로필 로드, 닉네임 중복 확인용 where 쿼리를 위해 필요)
+      allow read: if true;
+      
+      // [쓰기 권한] 로그인한 본인만 허용 (프로필 업데이트, 계정 생성 시)
+      // 프로필 편집 시 Zod 스키마와 동일한 유효성 검사(Validation) 룰을 적용했습니다.
+      allow write: if isOwner(userId) && (
+        // displayName이 업데이트 되는 경우, 2자 이상 20자 이하의 문자열이어야 함
+        (!request.resource.data.keys().hasAny(['displayName']) || 
+         (request.resource.data.displayName is string && 
+          request.resource.data.displayName.size() >= 2 && 
+          request.resource.data.displayName.size() <= 20)) &&
+          
+        // bio가 업데이트 되는 경우, 100자 이하의 문자열이어야 함
+        (!request.resource.data.keys().hasAny(['bio']) || 
+         (request.resource.data.bio is string && 
+          request.resource.data.bio.size() <= 100))
+      );
+      
+      // 2. 링크 목록 서브 컬렉션 (users/{userId}/links/{linkId})
+      match /links/{linkId} {
+        
+        // [읽기 권한] 누구나 허용
+        // (퍼블릭 랜딩 페이지 접속 시 해당 사용자의 모든 링크를 보여주기 위해 필요)
+        allow read: if true;
+        
+        // [생성 및 삭제 권한] 본인만 허용
+        allow create, delete: if isOwner(userId);
+        
+        // [수정 권한] 본인은 전체 수정 가능.
+        // 방문자(누구나)는 오직 clickCount 필드만 수정 가능하도록 제한합니다.
+        allow update: if isOwner(userId) || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['clickCount'])
+        );
+      }
+    }
+  }
+}

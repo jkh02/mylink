@@ -3,6 +3,7 @@ export interface LinkItem {
   title: string;
   url: string;
   faviconUrl?: string;
+  clickCount?: number;
   createdAt: string;
   updatedAt?: string;
 }

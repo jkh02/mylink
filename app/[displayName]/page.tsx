@@ -3,7 +3,7 @@
 import { use } from "react";
 import { notFound } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs, orderBy, doc, updateDoc, increment } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { IconLoader2 } from "@tabler/icons-react";
 import { Card } from "@/components/ui/card";
@@ -52,6 +52,23 @@ export default function PublicProfilePage({
     },
     enabled: !!userId,
   });
+
+  const handleLinkClick = async (e: React.MouseEvent, link: LinkItem) => {
+    e.preventDefault(); // 기본 a 태그 이동 방지
+    if (!userId) return;
+
+    // 1. 새 창으로 먼저 이동시킵니다.
+    window.open(link.url, '_blank', 'noopener,noreferrer');
+
+    // 2. 비동기로 안전하게 클릭수를 업데이트합니다.
+    try {
+      await updateDoc(doc(db, "users", userId, "links", link.id), {
+        clickCount: increment(1)
+      });
+    } catch (e) {
+      console.error("Click count update failed", e);
+    }
+  };
 
   if (isUserLoading) {
     return (
@@ -109,6 +126,7 @@ export default function PublicProfilePage({
                   href={link.url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  onClick={(e) => handleLinkClick(e, link)}
                   className="w-full block outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 rounded-2xl"
                 >
                   <Card className="relative flex items-center p-4 h-16 overflow-hidden border border-white/40 dark:border-white/10 bg-white/50 dark:bg-zinc-900/40 backdrop-blur-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.1)] transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_20px_40px_rgb(0,0,0,0.08)] dark:hover:shadow-[0_20px_40px_rgb(0,0,0,0.3)] hover:border-white/80 dark:hover:border-white/20 rounded-xl pr-20">

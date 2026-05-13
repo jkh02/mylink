@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { IconCopy, IconEye, IconUserEdit, IconLogout } from "@tabler/icons-react";
+import { IconCopy, IconEye, IconUserEdit, IconLogout, IconChartBar } from "@tabler/icons-react";
 
 const urlSchema = z.string().min(1, { message: "연결할 URL 주소를 입력해주세요." }).refine((val) => {
   try {
@@ -377,6 +377,7 @@ export default function Page() {
         title: values.title,
         url: finalUrl,
         faviconUrl: faviconUrl || null,
+        clickCount: 0,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -405,16 +406,30 @@ export default function Page() {
       </div>
 
       {/* Header Area */}
-      <header className={`w-full max-w-md flex items-center mb-8 relative z-20 ${!isAuthLoading && user ? "justify-between" : "justify-end"}`}>
-        {!isAuthLoading && (
-          user ? (
+      <header className="w-full max-w-md flex items-center justify-between mb-8 relative z-20">
+        
+        {/* Brand Logo */}
+        <div 
+          onClick={() => window.location.href = '/'}
+          className="flex items-center gap-2.5 cursor-pointer group select-none"
+        >
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:shadow-indigo-500/50 transition-all duration-300 group-hover:scale-105">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="text-white"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <span className="font-extrabold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-zinc-900 to-zinc-600 dark:from-white dark:to-zinc-400">
+            MyLink
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {!isAuthLoading && (user ? (
             <>
               <button
                 onClick={() => window.open(`/@${profile?.displayName || user.displayName || user.uid}`, '_blank')}
                 className="flex items-center gap-2 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/40 dark:border-white/10 shadow-sm hover:bg-white/80 dark:hover:bg-zinc-800/80 transition-all text-sm font-semibold text-zinc-700 dark:text-zinc-200 cursor-pointer"
               >
                 <IconEye className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-                <span>내 페이지</span>
+                <span className="hidden sm:inline">내 페이지</span>
               </button>
               <DropdownMenu>
                 <DropdownMenuTrigger className="outline-none">
@@ -466,6 +481,14 @@ export default function Page() {
                 >
                   <IconUserEdit className="w-4 h-4 mr-3 text-zinc-500 dark:text-zinc-400" />
                   <span className="font-medium text-sm text-zinc-700 dark:text-zinc-300">프로필 편집</span>
+                </DropdownMenuItem>
+
+                <DropdownMenuItem 
+                  className="rounded-xl p-3 cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-colors"
+                  onClick={() => window.location.href = '/stats'}
+                >
+                  <IconChartBar className="w-4 h-4 mr-3 text-indigo-500 dark:text-indigo-400" />
+                  <span className="font-medium text-sm text-indigo-600 dark:text-indigo-400">통계 보기</span>
                 </DropdownMenuItem>
 
                 <DropdownMenuSeparator className="bg-zinc-200/50 dark:bg-zinc-800/50" />
@@ -559,8 +582,8 @@ export default function Page() {
             </Button>
           )
         )}
+        </div>
       </header>
-
       <div className="flex w-full max-w-md flex-col items-center gap-10 relative z-10">
         
         {/* Conditional View */}
@@ -761,6 +784,12 @@ export default function Page() {
                         {link.title}
                       </div>
                       
+                      {/* Click Count */}
+                      <div className="absolute right-20 top-1/2 -translate-y-1/2 flex items-center gap-1.5 text-xs font-semibold text-zinc-400 dark:text-zinc-500 bg-zinc-100/50 dark:bg-zinc-800/50 px-2.5 py-1 rounded-full border border-zinc-200/50 dark:border-zinc-700/50 backdrop-blur-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M15.004 5.925L13.5 12h5.5l-9.504 11.075L11 17H5.5z"/></svg>
+                        {link.clickCount || 0}
+                      </div>
+
                     </Card>
                   </a>
                   
